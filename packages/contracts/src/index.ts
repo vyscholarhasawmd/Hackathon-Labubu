@@ -1,6 +1,8 @@
 export type CountryCode = "DE";
 export type PlanCode = "FREE" | "PLUS" | "HOUSEHOLD";
-export type ScanStatus = "ANALYZED" | "ACCEPTED" | "REJECTED" | "FAILED";
+export type QualityTier = "BASIC" | "ENHANCED" | "HOUSEHOLD_PREVIEW";
+export type ScanStatus = "PROCESSING" | "ANALYZED" | "ACCEPTED" | "REJECTED" | "FAILED";
+export type WeightSource = "AI_ESTIMATE" | "CATEGORY_DEFAULT" | "USER";
 
 export type WasteCategory =
   | "LIGHTWEIGHT_PACKAGING"
@@ -10,10 +12,6 @@ export type WasteCategory =
   | "RESIDUAL"
   | "BATTERY"
   | "E_WASTE"
-<<<<<<< ours
-  | "LOCAL_GUIDANCE_REQUIRED";
-
-=======
   | "TEXTILE"
   | "HAZARDOUS_WASTE"
   | "MEDICAL_SHARPS"
@@ -24,65 +22,60 @@ export type WasteCategory =
   | "REUSE_DONATE"
   | "LOCAL_GUIDANCE_REQUIRED";
 
-export interface DisposalRecommendation {
-  wasteTypeLabel: string;
-  category: WasteCategory;
-  disposalRoute: string;
-  binLabel: string;
-  confidence: number;
-  reason: string;
-  disposalInstructions: string[];
-  reuseSuggestion: string;
-  requiresLocalGuidance: boolean;
-}
+export type HazardSignal =
+  | "BATTERY"
+  | "PRESSURIZED"
+  | "FLAMMABLE"
+  | "CORROSIVE"
+  | "TOXIC"
+  | "SHARP"
+  | "MEDICINE"
+  | "ELECTRONIC"
+  | "NONE";
 
->>>>>>> theirs
 export interface IdentificationResult {
   primaryObject: string;
   isPackaging: boolean;
-  packagingType: "CUP" | "BOX" | "JAR" | "CAN" | "OTHER";
+  packagingType: "CUP" | "BOX" | "JAR" | "BOTTLE" | "CAN" | "BAG" | "OTHER";
+  packagingState: "EMPTY" | "PARTLY_FULL" | "FULL" | "UNKNOWN";
   materials: Array<{ material: string; proportion: "PRIMARY" | "SECONDARY"; confidence: number }>;
   visibleSymbols: Array<{ code: string; rawText: string | null; confidence: number }>;
-  estimatedWeightGrams: number;
+  hazardSignals: HazardSignal[];
+  estimatedWeightGrams: number | null;
   weightConfidence: number;
   overallConfidence: number;
   uncertainties: string[];
   retakeAdvice: string | null;
-<<<<<<< ours
-=======
-  disposalRecommendation: DisposalRecommendation;
->>>>>>> theirs
 }
 
 export interface ScanDto {
   id: string;
   status: ScanStatus;
   provider: "MOCK" | "OPENAI";
+  model: string | null;
+  promptVersion: string;
   countryCode: CountryCode;
   createdAt: string;
-  identification: IdentificationResult;
+  identification: IdentificationResult | null;
+  errorCode: string | null;
+  thumbnailUrl: string | null;
 }
 
-<<<<<<< ours
-=======
 export interface CountryDto {
   code: string;
   name: string;
   enabled: boolean;
   label?: string;
   ruleSetVersion?: string;
+  ruleSetEffectiveFrom?: string;
   sourceUrls?: string[];
 }
 
->>>>>>> theirs
 export interface WasteRecordDto {
   id: string;
   scanId: string;
   identifiedName: string;
-<<<<<<< ours
-=======
   wasteTypeLabel: string;
->>>>>>> theirs
   category: WasteCategory;
   primaryMaterial: string;
   materialLabel: string;
@@ -92,11 +85,22 @@ export interface WasteRecordDto {
   reuseSuggestions: string[];
   environmentalImpactSummary: string;
   estimatedWeightGrams: number;
+  weightSource: WeightSource;
+  weightConfidence: number | null;
   estimatedDisposalCo2eKg: number | null;
+  carbonMethodologyVersion: string | null;
+  carbonBoundary: string | null;
   classificationConfidence: number;
+  requiresLocalGuidance: boolean;
+  localWarning: string | null;
   ruleSetVersion: string;
+  ruleSetEffectiveFrom: string;
   sourceUrls: string[];
+  analysisProvider: "MOCK" | "OPENAI";
+  analysisModel: string | null;
   createdAt: string;
+  updatedAt: string;
+  thumbnailUrl: string | null;
 }
 
 export interface PlanDto {
@@ -105,6 +109,7 @@ export interface PlanDto {
   weeklyLimit: number;
   priceCents: number;
   accuracyLabel: string;
+  qualityTier: QualityTier;
   features: string[];
   checkoutEnabled: boolean;
   comingSoon?: boolean;
@@ -115,6 +120,7 @@ export interface SubscriptionDto {
   weeklyLimit: number;
   used: number;
   remaining: number;
+  weekStart: string;
   resetsAt: string;
 }
 
@@ -122,12 +128,41 @@ export interface AnalyticsDto {
   totalAccepted: number;
   totalWeightGrams: number;
   totalDisposalCo2eKg: number;
+  recordsWithoutCarbonFactor: number;
+  daily: Array<{ date: string; count: number; weightGrams: number; disposalCo2eKg: number }>;
   dailyCounts: number[];
-  categories: Array<{ label: string; count: number }>;
-  suggestions: Array<{ title: string; action: string }>;
+  categories: Array<{ category: WasteCategory | "BIN"; label: string; count: number; weightGrams: number }>;
+  suggestions: Array<{ code: string; title: string; action: string; evidence: string }>;
+}
+
+export interface UserDto {
+  id: string;
+  username: string;
+  displayName: string;
+  countryCode: CountryCode;
+  timezone: string;
 }
 
 export interface AuthResponse {
   accessToken: string;
-  user: { id: string; username: string; displayName: string; countryCode: CountryCode };
+  user: UserDto;
+}
+
+export interface PaymentTransactionDto {
+  id: string;
+  planCode: PlanCode;
+  amountCents: number;
+  currency: "EUR";
+  status: "SUCCEEDED" | "DECLINED";
+  provider: "FAKE";
+  providerReference: string;
+  failureCode: string | null;
+  createdAt: string;
+}
+
+export interface PaginatedWasteRecordsDto {
+  items: WasteRecordDto[];
+  page: number;
+  pageSize: number;
+  total: number;
 }

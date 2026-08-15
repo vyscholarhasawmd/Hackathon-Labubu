@@ -9,6 +9,7 @@ export class RegisterDto extends LoginDto {}
 
 export class DecisionDto {
   @IsIn(["ACCEPT", "REJECT"]) decision!: "ACCEPT" | "REJECT";
+  @IsOptional() @IsString() @MaxLength(80) reasonCode?: string;
   @IsOptional() @IsString() @MaxLength(500) comment?: string;
 }
 

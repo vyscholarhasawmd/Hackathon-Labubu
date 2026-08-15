@@ -45,4 +45,15 @@ describe("Re-Sort API", () => {
     expect(second.body.id).toBe(first.body.id);
     expect(after.body.used).toBe(before.body.used + 1);
   });
+
+  it("groups this week's category summary by the actual disposal bin", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/v1/analytics/summary")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const categories = response.body.categories as Array<{ label: string; count: number }>;
+    expect(categories.some((item) => item.label === "Yellow bin or sack" && item.count > 0)).toBe(true);
+    expect(categories.some((item) => ["Plastic", "Paper", "Metal", "Glass"].includes(item.label))).toBe(false);
+  });
 });

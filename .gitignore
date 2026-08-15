@@ -38,6 +38,7 @@ yarn-error.log*
 /outputs/
 /work/
 /uploads/
+apps/api/uploads/
 /coverage/
 /playwright-report/
 /test-results/

@@ -1,63 +1,99 @@
-# Re-Sort Mobile Web App
+# Re-Sort mobile web app
 
-Re-Sort is a standalone, local-first mobile web application. It is **not a ChatGPT Site** and has no Sites hosting dependency. The workspace is a pnpm monorepo with:
+Re-Sort is a standalone Vue 3 + NestJS mobile web app. It identifies photographed waste with the OpenAI Responses API, asks the user to confirm the identity, then applies a deterministic versioned Germany rule-set to choose the disposal route. Accepted results persist in PostgreSQL and update Home, History and Impact.
 
-- `apps/web`: Vue 3, Vite, Vue Router, Pinia and Axios.
-- `apps/api`: NestJS REST API with Swagger, mock image identification, deterministic Germany rules, quota, history, analytics and fake checkout.
-- `packages/contracts`: shared strict TypeScript DTOs.
-- Optional PostgreSQL 17 schema/seed scripts and Docker Compose configuration.
+The OpenAI key stays in the backend `.env`; it is never shipped to the browser.
 
-The default `DATA_MODE=memory` makes the full demo run without Docker or an OpenAI key. Restarting the API resets local demo data.
+## Clean local start
 
-## Quick start
+Requirements: Node.js 22+, pnpm 11+, PostgreSQL 17 (local or Docker).
 
-Requirements: Node.js 22+ and pnpm 11+.
+1. Install dependencies and prepare configuration:
 
-```bash
-cp .env.example .env
-pnpm install
-pnpm dev
-```
+   ```bash
+   cd '/Users/Khanh Vy/Documents/ChatGPT/buildahub final'
+   pnpm install
+   cp .env.example .env
+   open -a TextEdit .env
+   ```
 
-Open [http://localhost:5173](http://localhost:5173).
+2. In `.env`, set at minimum:
 
-The web server and API both bind to `0.0.0.0`:
+   ```dotenv
+   DATA_MODE=postgres
+   AI_MODE=openai
+   OPENAI_API_KEY=sk-proj-your-real-key
+   OPENAI_MODEL=gpt-5.6
+   JWT_ACCESS_SECRET=use-a-random-secret-at-least-32-characters-long
+   ```
 
-- Mobile web app: `http://localhost:5173`
-- API: `http://localhost:3000/api/v1`
-- Swagger: `http://localhost:3000/api/v1/docs`
-- Ready health: `http://localhost:3000/api/v1/health/ready`
+   Generate the JWT secret with `openssl rand -hex 32`. Never paste the OpenAI key into Vue code, browser devtools, screenshots or Git.
 
-Demo account:
+3. Start PostgreSQL. With Docker:
 
-- Username: `demo`
-- Password: `Demo12345!`
+   ```bash
+   docker compose up -d postgres
+   ```
 
-The frontend logs into this account automatically. If the API is temporarily unavailable, the UI stays usable with a clearly identified local fallback dataset.
+   Or, when PostgreSQL 17 was installed with Homebrew:
 
-## Connect ngrok
+   ```bash
+   brew services start postgresql@17
+   pg_isready -h localhost -p 5432
+   ```
 
-Keep `pnpm dev` running, then expose the web port:
+4. Create/migrate/seed once. The default connection is `postgresql://resort:resort@localhost:5432/resort`:
 
-```bash
-ngrok http 5173
-```
+   ```bash
+   pnpm db:migrate
+   pnpm db:seed
+   ```
 
-Open the HTTPS forwarding URL on your phone. Vite accepts the forwarded hostname and proxies `/api/*` to NestJS on port 3000, so only one tunnel is required. The HTTPS tunnel also allows browsers to request camera permission.
+5. Start both servers:
 
-Never expose the included demo credentials or default JWT/database secrets on a public production deployment.
+   ```bash
+   pnpm dev
+   ```
 
-## Optional PostgreSQL
+6. Open [http://localhost:5173](http://localhost:5173). API readiness should return `dataMode: postgres` and `aiMode: openai` at [http://localhost:3000/api/v1/health/ready](http://localhost:3000/api/v1/health/ready).
 
-Docker is optional for the current memory-mode demo. When Docker is installed:
+Demo login: username `demo`, password `Demo12345!`. Normal registration also works.
 
-```bash
-docker compose up -d postgres
-pnpm db:migrate
-pnpm db:seed
-```
+## Live demo checklist
 
-The schema is prepared for users, plans, subscriptions, quota, scans and waste records. The running demo remains in memory mode until a PostgreSQL repository adapter is selected with `DATA_MODE=postgres` in a future production hardening pass.
+1. Sign in.
+2. Open Scan and verify Germany is selected; other countries are visibly Coming soon.
+3. Take a photo or choose one, verify the preview, then press **Use this photo**.
+4. Review should show **Live OpenAI**, the real object identity and confidence.
+5. Accept to generate a grounded OpenAI environmental insight after the deterministic Germany route is resolved, or Reject to persist feedback.
+6. Confirm Analysis, Home, History and Impact update.
+7. Open Profile → Manage plan and simulate Plus/Free switching. Household and Re-Sort Bin hardware are explicitly Coming soon.
+
+If OpenAI is unavailable during an emergency rehearsal, set `AI_MODE=mock` and restart. The Review/Analysis UI explicitly labels this as demo fallback; it is never presented as live AI.
+
+## Expose the app with ngrok
+
+Only tunnel the Vite web port. Vite forwards same-origin `/api/*` requests to NestJS, so the OpenAI key and API port do not need a public tunnel.
+
+1. Install and authenticate ngrok once:
+
+   ```bash
+   brew install ngrok/ngrok/ngrok
+   ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+   ```
+
+2. Keep `pnpm dev` running in Terminal 1.
+
+3. In Terminal 2:
+
+   ```bash
+   cd '/Users/Khanh Vy/Documents/ChatGPT/buildahub final'
+   ngrok http 5173
+   ```
+
+4. Open ngrok's `https://...ngrok-free.app` forwarding URL on the phone. Use HTTPS so mobile camera permission is available. Keep the Mac awake and both terminal processes running.
+
+Do not run `ngrok http 3000`; the web app needs the Vite route fallback and `/api` proxy on port 5173.
 
 ## Verification
 
@@ -68,11 +104,4 @@ pnpm test
 pnpm build
 ```
 
-The detailed product requirements and architecture reference are in [CODEX_MASTER_BUILD_SPEC.md](./CODEX_MASTER_BUILD_SPEC.md).
-
-## Product disclosures
-
-- `AI_MODE=mock` never calls an external model and returns deterministic yogurt-cup identification for the demo flow.
-- Household accounts, physical Re-Sort Bin connectivity and real payment processing are display-only or simulated.
-- Carbon output is an indicative end-of-life estimate based on a versioned waste-treatment proxy, not a full product life-cycle assessment.
-- Germany-wide sorting guidance is informational; municipal rules can differ.
+Key disclosures: subscription checkout is simulated and collects no card input; Household and physical-bin connectivity are Coming soon; the footprint is a versioned end-of-life disposal proxy, not a full product life-cycle assessment; municipal collection rules may differ from Germany-wide guidance.
