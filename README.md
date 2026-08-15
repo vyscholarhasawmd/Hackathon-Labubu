@@ -1,37 +1,78 @@
-# Re-Sort
+# Re-Sort Mobile Web App
 
-Re-Sort is a responsive waste-intelligence web app for people in Germany. The demo covers the full product journey: local demo authentication, camera/gallery input, a privacy-aware mock identification flow, deterministic German disposal guidance, an editable disposal-footprint estimate, history and impact views, weekly quota, and a fake Plus checkout.
+Re-Sort is a standalone, local-first mobile web application. It is **not a ChatGPT Site** and has no Sites hosting dependency. The workspace is a pnpm monorepo with:
+
+- `apps/web`: Vue 3, Vite, Vue Router, Pinia and Axios.
+- `apps/api`: NestJS REST API with Swagger, mock image identification, deterministic Germany rules, quota, history, analytics and fake checkout.
+- `packages/contracts`: shared strict TypeScript DTOs.
+- Optional PostgreSQL 17 schema/seed scripts and Docker Compose configuration.
+
+The default `DATA_MODE=memory` makes the full demo run without Docker or an OpenAI key. Restarting the API resets local demo data.
 
 ## Quick start
 
-Requirements: Node.js 22.13 or newer.
+Requirements: Node.js 22+ and pnpm 11+.
 
 ```bash
-npm install
-npm run dev
+cp .env.example .env
+pnpm install
+pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open [http://localhost:5173](http://localhost:5173).
 
-Demo credentials are pre-filled in the login screen:
+The web server and API both bind to `0.0.0.0`:
+
+- Mobile web app: `http://localhost:5173`
+- API: `http://localhost:3000/api/v1`
+- Swagger: `http://localhost:3000/api/v1/docs`
+- Ready health: `http://localhost:3000/api/v1/health/ready`
+
+Demo account:
 
 - Username: `demo`
 - Password: `Demo12345!`
 
-This version intentionally runs in `Demo AI` mode and does not call OpenAI or upload images to an external service. Image inputs are previewed locally in the browser for the simulated flow.
+The frontend logs into this account automatically. If the API is temporarily unavailable, the UI stays usable with a clearly identified local fallback dataset.
+
+## Connect ngrok
+
+Keep `pnpm dev` running, then expose the web port:
+
+```bash
+ngrok http 5173
+```
+
+Open the HTTPS forwarding URL on your phone. Vite accepts the forwarded hostname and proxies `/api/*` to NestJS on port 3000, so only one tunnel is required. The HTTPS tunnel also allows browsers to request camera permission.
+
+Never expose the included demo credentials or default JWT/database secrets on a public production deployment.
+
+## Optional PostgreSQL
+
+Docker is optional for the current memory-mode demo. When Docker is installed:
+
+```bash
+docker compose up -d postgres
+pnpm db:migrate
+pnpm db:seed
+```
+
+The schema is prepared for users, plans, subscriptions, quota, scans and waste records. The running demo remains in memory mode until a PostgreSQL repository adapter is selected with `DATA_MODE=postgres` in a future production hardening pass.
 
 ## Verification
 
 ```bash
-npm run lint
-npm run build
-npm test
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
-The complete product requirements and architecture masterplan are in [CODEX_MASTER_BUILD_SPEC.md](./CODEX_MASTER_BUILD_SPEC.md).
+The detailed product requirements and architecture reference are in [CODEX_MASTER_BUILD_SPEC.md](./CODEX_MASTER_BUILD_SPEC.md).
 
-## Important scope notes
+## Product disclosures
 
-- Household accounts, physical Re-Sort Bin connectivity, and real payment processing are explicitly display-only or simulated.
-- Carbon values are indicative end-of-life estimates based on a versioned UK waste-treatment proxy, not a full life-cycle assessment or Germany-specific audit.
-- Germany-wide rules are informational. Municipal collection rules can differ; users should follow labels and local authority guidance.
+- `AI_MODE=mock` never calls an external model and returns deterministic yogurt-cup identification for the demo flow.
+- Household accounts, physical Re-Sort Bin connectivity and real payment processing are display-only or simulated.
+- Carbon output is an indicative end-of-life estimate based on a versioned waste-treatment proxy, not a full product life-cycle assessment.
+- Germany-wide sorting guidance is informational; municipal rules can differ.

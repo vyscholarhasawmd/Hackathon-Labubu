@@ -1,41 +1,28 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import eslint from "@eslint/js";
-import next from "@next/eslint-plugin-next";
-import jsxA11y from "eslint-plugin-jsx-a11y";
-import react from "eslint-plugin-react";
-import reactHooks from "eslint-plugin-react-hooks";
+import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import pluginVue from "eslint-plugin-vue";
+import vueParser from "vue-eslint-parser";
 
-const eslintConfig = defineConfig([
-  globalIgnores([
-    ".next/**",
-    "dist/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
-  eslint.configs.recommended,
+export default [
+  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "uploads/**"] },
+  js.configs.recommended,
   ...tseslint.configs.recommended,
-  react.configs.flat.recommended,
-  react.configs.flat["jsx-runtime"],
-  reactHooks.configs.flat["recommended-latest"],
-  jsxA11y.flatConfigs.recommended,
-  next.configs["core-web-vitals"],
+  ...pluginVue.configs["flat/recommended"],
   {
-    languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-        ...globals.serviceworker,
-      },
-    },
-    settings: {
-      react: {
-        version: "detect",
-      },
-    },
+    files: ["**/*.ts"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: { "@typescript-eslint/no-explicit-any": "error", "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }] }
   },
-]);
-
-export default eslintConfig;
+  {
+    files: ["**/*.vue"],
+    languageOptions: { parser: vueParser, parserOptions: { parser: tseslint.parser, extraFileExtensions: [".vue"], sourceType: "module" }, globals: globals.browser },
+    rules: {
+      "vue/multi-word-component-names": "off",
+      "vue/max-attributes-per-line": "off",
+      "vue/html-self-closing": "off",
+      "vue/singleline-html-element-content-newline": "off",
+      "vue/attributes-order": "off"
+    }
+  }
+];

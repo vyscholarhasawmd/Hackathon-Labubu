@@ -1,0 +1,11 @@
+{
+  "name": "Re-Sort — Waste Intelligence",
+  "short_name": "Re-Sort",
+  "description": "Mobile waste sorting guidance for Germany.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F5F0E6",
+  "theme_color": "#F5F0E6"
+}
