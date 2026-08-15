@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ArrowLeft, BatteryCharging, Bell, Camera, Check, CheckCircle2, ChevronDown, ChevronRight,
   CircleUserRound, Clock3, Cloud, ExternalLink, FileImage, Home, Info, Leaf, Package, Recycle,
   ShieldCheck, Sparkles, Trash2, Upload, X,
 } from "lucide-vue-next";
+import { apiErrorMessage } from "../api";
 import { useResortStore } from "../store";
 
 const route = useRoute();
@@ -20,19 +21,65 @@ const rejectOpen = ref(false);
 const binOpen = ref(false);
 const paymentOpen = ref(false);
 const successOpen = ref(false);
+const countryMenuOpen = ref(false);
 const toast = ref("");
 const weight = ref(25);
 const activeScreen = computed(() => String(route.name ?? "home"));
-const record = computed(() => store.record ?? store.history[0]);
+const selectedCountry = computed(() => store.countries.find((country) => country.code === store.selectedCountryCode)
+  ?? store.countries[0]);
+const countryFlags: Record<string, string> = {
+  DE: "🇩🇪",
+  AT: "🇦🇹",
+  FR: "🇫🇷",
+  NL: "🇳🇱",
+};
+const record = computed(() => {
+  const recordId = String(route.params.id ?? "");
+  if (store.record?.id === recordId) return store.record;
+  return store.history.find((item) => item.id === recordId) ?? null;
+});
 const co2Grams = computed(() => (((record.value?.estimatedDisposalCo2eKg ?? 0) * 1000)).toFixed(2));
+const disposalDescription = computed(() => record.value?.environmentalImpactSummary
+  ?? "No AI disposal recommendation is available for this record.");
 const bars = computed(() => store.analytics.dailyCounts);
 const maxBar = computed(() => Math.max(...bars.value, 1));
+const reviewMaterial = computed(() => {
+  const identification = store.scan?.identification;
+
+  if (!identification) {
+    return "Material uncertain";
+  }
+
+  const material =
+    identification.materials[0]?.material;
+
+  const symbol =
+    identification.visibleSymbols[0]?.rawText ??
+    identification.visibleSymbols[0]?.code;
+
+  return [material, symbol]
+    .filter(Boolean)
+    .join(" · ");
+});
+
+watch(record, (currentRecord) => {
+  if (currentRecord) weight.value = currentRecord.estimatedWeightGrams;
+}, { immediate: true });
 
 onMounted(() => store.initialize());
 
 function navigate(path: string): void { void router.push(path); }
 function showToast(message: string): void { toast.value = message; window.setTimeout(() => { toast.value = ""; }, 2800); }
 function clearSession(): void { window.sessionStorage.clear(); showToast("Local session cleared"); }
+function closeCountryMenuOnBlur(event: FocusEvent): void {
+  const selector = event.currentTarget as HTMLElement;
+  if (!selector.contains(event.relatedTarget as Node | null)) countryMenuOpen.value = false;
+}
+function selectCountry(code: string, enabled: boolean): void {
+  if (!enabled) return;
+  store.selectedCountryCode = code;
+  countryMenuOpen.value = false;
+}
 
 function onFile(event: Event): void {
   const input = event.target as HTMLInputElement;
@@ -45,12 +92,34 @@ function onFile(event: Event): void {
 }
 
 async function usePhoto(): Promise<void> {
-  if (!store.file) { error.value = "Choose or take a photo first."; return; }
-  processing.value = true; progressStep.value = 0;
-  window.setTimeout(() => { progressStep.value = 1; }, 550);
-  window.setTimeout(() => { progressStep.value = 2; }, 1100);
-  const scan = await store.analyze();
-  window.setTimeout(() => { processing.value = false; void router.push(`/scan/${scan.id}/review`); }, 1650);
+  if (!store.file) {
+    error.value = "Choose or take a photo first.";
+    return;
+  }
+
+  processing.value = true;
+  progressStep.value = 0;
+  error.value = "";
+
+  window.setTimeout(() => {
+    progressStep.value = 1;
+  }, 550);
+
+  window.setTimeout(() => {
+    progressStep.value = 2;
+  }, 1100);
+
+  try {
+    const scan = await store.analyze();
+
+    window.setTimeout(() => {
+      processing.value = false;
+      void router.push(`/scan/${scan.id}/review`);
+    }, 1650);
+  } catch (cause) {
+    processing.value = false;
+    error.value = apiErrorMessage(cause);
+  }
 }
 
 async function acceptResult(): Promise<void> {
@@ -96,10 +165,37 @@ async function upgrade(): Promise<void> { await store.upgradePlus(); paymentOpen
         </template>
 
         <template v-else-if="activeScreen === 'scan'">
-          <header class="screen-header"><button class="icon-button" @click="navigate('/')" aria-label="Back"><ArrowLeft /></button><h2>Scan & Sort</h2><button class="country-chip">🇩🇪 Germany <ChevronDown :size="13" /></button></header>
+          <header class="screen-header">
+            <button class="icon-button" @click="navigate('/')" aria-label="Back"><ArrowLeft /></button>
+            <h2>Scan & Sort</h2>
+            <div class="country-selector" @focusout="closeCountryMenuOnBlur" @keydown.esc="countryMenuOpen=false">
+              <button class="country-chip" type="button" aria-haspopup="listbox" :aria-expanded="countryMenuOpen" @click="countryMenuOpen=!countryMenuOpen">
+                <span>{{ countryFlags[selectedCountry?.code ?? 'DE'] }}</span>
+                {{ selectedCountry?.name ?? 'Germany' }}
+                <ChevronDown :size="15" :class="{ rotated: countryMenuOpen }" />
+              </button>
+              <div v-if="countryMenuOpen" class="country-menu" role="listbox" aria-label="Available countries">
+                <button
+                  v-for="country in store.countries"
+                  :key="country.code"
+                  type="button"
+                  role="option"
+                  :aria-selected="country.code===store.selectedCountryCode"
+                  :disabled="!country.enabled"
+                  @click="selectCountry(country.code, country.enabled)"
+                >
+                  <span class="country-flag">{{ countryFlags[country.code] ?? '🌍' }}</span>
+                  <span class="country-name">{{ country.name }}</span>
+                  <Check v-if="country.code===store.selectedCountryCode" :size="16" class="country-check" />
+                  <span v-else-if="!country.enabled" class="coming-soon-tag">{{ country.label ?? 'Coming soon' }}</span>
+                </button>
+                <p>Germany-wide guidance is currently supported.</p>
+              </div>
+            </div>
+          </header>
           <section v-if="processing" class="processing-screen">
             <div class="scan-preview processing"><img v-if="store.previewUrl" :src="store.previewUrl" alt="Selected item" /><div v-else class="cup-object"><span></span></div><i class="scan-line"></i></div>
-            <span class="demo-badge">Demo AI</span><h1>Looking closely…</h1><ol><li v-for="(label,index) in ['Uploading','Identifying','Preparing result']" :key="label" :class="{active:index<=progressStep}"><span>{{ index < progressStep ? '✓' : index+1 }}</span>{{ label }}</li></ol>
+            <span class="demo-badge">AI image analysis</span><h1>Looking closely…</h1><ol><li v-for="(label,index) in ['Uploading','Identifying','Preparing result']" :key="label" :class="{active:index<=progressStep}"><span>{{ index < progressStep ? '✓' : index+1 }}</span>{{ label }}</li></ol>
           </section>
           <template v-else>
             <div class="camera-stage" :class="{selected:store.previewUrl}">
@@ -117,15 +213,33 @@ async function upgrade(): Promise<void> { await store.upgradePlus(); paymentOpen
 
         <template v-else-if="activeScreen === 'review'">
           <header class="screen-header"><button class="icon-button" @click="navigate('/scan')"><ArrowLeft /></button><h2>Review</h2><button class="icon-button" @click="navigate('/scan')"><X /></button></header>
-          <div class="review-photo"><img v-if="store.previewUrl" :src="store.previewUrl" alt="Scanned yogurt cup" /><div v-else class="cup-object big"><span></span></div></div>
-          <section class="review-details"><h1>{{ store.scan?.identification.primaryObject ?? 'Yogurt cup' }}</h1><span class="confidence"><ShieldCheck :size="17" />High confidence · {{ Math.round((store.scan?.identification.overallConfidence ?? .88)*100) }}%</span><div class="material-row"><Recycle :size="22" /><span>Plastic · PP 5</span><Info :size="17" /></div><div class="correct-block"><h3>Is this correct?</h3><button class="confirm-button" @click="acceptResult"><Check :size="21" />Yes, this is correct</button><button class="text-link" @click="rejectOpen=true">No, report an issue</button></div><p class="fine-note"><Info :size="14" />AI identifies the object. Versioned rules choose the disposal route.</p></section>
+          <div class="review-photo"><img v-if="store.previewUrl" :src="store.previewUrl" alt="Scanned waste item" /><div v-else class="cup-object big"><span></span></div></div>
+          <section class="review-details">
+            <h1>{{ store.scan?.identification.primaryObject ?? 'No AI identification' }}</h1>
+            <span v-if="store.scan" class="confidence"><ShieldCheck :size="17" />AI confidence · {{ Math.round(store.scan.identification.overallConfidence*100) }}%</span>
+            <div class="material-row"><Recycle :size="22" /><span>{{ reviewMaterial }}</span><Info :size="17" /></div>
+            <div v-if="store.scan" class="ai-route-preview">
+              <span>AI waste type</span>
+              <strong>{{ store.scan.identification.disposalRecommendation.wasteTypeLabel }}</strong>
+              <span>Recommended bin or route</span>
+              <strong>{{ store.scan.identification.disposalRecommendation.binLabel }}</strong>
+            </div>
+            <div class="correct-block"><h3>Is this correct?</h3><button class="confirm-button" :disabled="!store.scan" @click="acceptResult"><Check :size="21" />Yes, this is correct</button><button class="text-link" @click="rejectOpen=true">No, report an issue</button></div>
+            <p class="fine-note"><Info :size="14" />AI identifies the item and provides the waste type, bin or collection route, and disposal instructions. Low-confidence results require local guidance.</p>
+          </section>
         </template>
 
         <template v-else-if="activeScreen === 'analysis'">
           <header class="screen-header"><button class="icon-button" @click="router.back()"><ArrowLeft /></button><h2>Analysis</h2><button class="icon-button"><Upload :size="18" /></button></header>
           <article class="analysis-route">
-            <div class="bin-illustration"><Trash2 :size="43" /><span><Recycle :size="20" /></span></div><div><h1>{{ record?.binLabel ?? 'Yellow bin or sack' }}</h1><p>This item goes in your yellow recycling bin or sack for lightweight packaging.</p></div>
-            <section><h3>Preparation checklist</h3><ul><li v-for="step in record?.preparationSteps.slice(0,3)" :key="step"><CheckCircle2 :size="17" />{{ step }}</li></ul></section>
+            <div class="bin-illustration" :class="record?.category.toLowerCase()"><Trash2 :size="43" /><span><Leaf v-if="record?.category==='ORGANIC'" :size="20" /><BatteryCharging v-else-if="record?.category==='BATTERY'" :size="20" /><FileImage v-else-if="record?.category==='PAPER_CARDBOARD'" :size="20" /><Recycle v-else :size="20" /></span></div>
+            <div>
+              <p class="route-identification">AI identified · {{ record?.identifiedName ?? 'No item' }}</p>
+              <h1>{{ record?.binLabel ?? 'No disposal recommendation' }}</h1>
+              <p class="route-type">{{ record?.wasteTypeLabel }}<span v-if="record?.materialLabel"> · {{ record.materialLabel }}</span></p>
+              <p>{{ disposalDescription }}</p>
+            </div>
+            <section><h3>Disposal instructions</h3><ul><li v-for="step in record?.preparationSteps" :key="step"><CheckCircle2 :size="17" />{{ step }}</li></ul></section>
           </article>
           <button class="better-choice"><span><Leaf :size="24" /></span><span><strong>Better choice</strong><small>{{ record?.reuseSuggestions[0] }}</small></span><ChevronRight :size="17" /></button>
           <article class="footprint-card"><div class="section-title"><strong><Leaf :size="17" />Estimated disposal footprint</strong><span>Proxy</span></div><div class="footprint-value"><span><strong>{{ co2Grams }} g</strong><small>CO₂e</small></span><div class="impact-bars"><i></i><i></i><i></i></div></div><label>Estimated item weight<div><input v-model.number="weight" type="number" min="1" max="100000" /><span>g</span><button @click="updateWeight">Update</button></div></label><p>This is an indicative end-of-life estimate, not a full product life-cycle assessment.</p></article>
@@ -171,3 +285,122 @@ async function upgrade(): Promise<void> { await store.upgradePlus(); paymentOpen
     <div v-if="toast" class="toast" role="status"><CheckCircle2 />{{ toast }}</div>
   </main>
 </template>
+
+<style scoped>
+.ai-route-preview {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid #c8d2c0;
+  border-radius: 9px;
+  background: #eff3e8;
+  display: grid;
+  gap: 3px;
+}
+
+.ai-route-preview span,
+.route-identification,
+.route-type {
+  color: #687068;
+  font-size: 9px;
+}
+
+.ai-route-preview strong + span {
+  margin-top: 7px;
+}
+
+.route-identification {
+  margin: 3px 0 5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: 700;
+}
+
+.route-type {
+  margin-bottom: 7px;
+}
+
+.country-selector {
+  position: relative;
+}
+
+.country-chip svg {
+  transition: transform .18s ease;
+}
+
+.country-chip svg.rotated {
+  transform: rotate(180deg);
+}
+
+.country-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 238px;
+  padding: 6px;
+  border: 1px solid #cbc8bb;
+  border-radius: 12px;
+  background: #fffdf7;
+  box-shadow: 0 15px 38px rgba(44, 49, 43, .18);
+}
+
+.country-menu button {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+}
+
+.country-menu button:not(:disabled):hover,
+.country-menu button[aria-selected="true"] {
+  background: #eff3e8;
+}
+
+.country-menu button:disabled {
+  cursor: not-allowed;
+  opacity: .72;
+}
+
+.country-flag {
+  font-size: 17px;
+}
+
+.country-name {
+  font-weight: 650;
+}
+
+.country-check {
+  color: #1e5c45;
+}
+
+.coming-soon-tag {
+  padding: 4px 6px;
+  border-radius: 99px;
+  background: #f4e7bf;
+  color: #8d6200;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.country-menu p {
+  margin: 5px 6px 3px;
+  padding-top: 8px;
+  border-top: 1px solid #e1ddd2;
+  color: #73766f;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.bin-illustration.organic {
+  background: #e4edda;
+  color: #3f7046;
+}
+</style>

@@ -10,6 +10,7 @@ import type { AuthResponse } from "@resort/contracts";
 import { AuthGuard, type AuthenticatedRequest } from "./auth.guard";
 import { CheckoutDto, DecisionDto, LoginDto, RegisterDto, WeightDto } from "./dto";
 import { MemoryStore } from "./memory.store";
+import { OpenAiIdentificationService } from "./openai-identification.service";
 import { RULE_SET_VERSION, RULE_SOURCES, RuleEngine } from "./rule.engine";
 
 @ApiTags("auth")
@@ -46,31 +47,139 @@ export class CountriesController {
   @Get() all() { return [{ code: "DE", name: "Germany", enabled: true, ruleSetVersion: RULE_SET_VERSION, sourceUrls: RULE_SOURCES }, { code: "AT", name: "Austria", enabled: false, label: "Coming soon" }, { code: "FR", name: "France", enabled: false, label: "Coming soon" }, { code: "NL", name: "Netherlands", enabled: false, label: "Coming soon" }]; }
 }
 
-@ApiTags("scans")
+@ApiTags("scans")@ApiTags("scans")
 @Controller("scans")
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class ScansController {
-  constructor(@Inject(MemoryStore) private readonly store: MemoryStore, @Inject(RuleEngine) private readonly rules: RuleEngine) {}
-  @Post() @ApiConsumes("multipart/form-data")
-  @UseInterceptors(FileInterceptor("image", { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
-  async create(@Req() request: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File | undefined, @Headers("idempotency-key") key?: string) {
-    if (!file) throw new BadRequestException("Multipart field 'image' is required");
+  constructor(
+    @Inject(MemoryStore)
+    private readonly store: MemoryStore,
+    @Inject(RuleEngine)
+    private readonly rules: RuleEngine,
+    @Inject(OpenAiIdentificationService)
+    private readonly vision: OpenAiIdentificationService,
+  ) {}
+
+  @Post()
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(
+    FileInterceptor("image", {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  async create(
+    @Req() request: AuthenticatedRequest,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Headers("idempotency-key") key?: string,
+  ) {
+    const requestKey = key ?? randomUUID();
+    const existingScan = this.store.findScanByIdempotency(
+      request.userId,
+      requestKey,
+    );
+
+    if (existingScan) {
+      return existingScan;
+    }
+
+    if (!file) {
+      throw new BadRequestException(
+        "Multipart field 'image' is required",
+      );
+    }
+
     let metadata: sharp.Metadata;
-    try { metadata = await sharp(file.buffer, { limitInputPixels: 25_000_000 }).metadata(); } catch { throw new BadRequestException("Image is malformed or unsupported"); }
-    if (!metadata.width || !metadata.height || !["jpeg", "png", "webp", "heif"].includes(metadata.format ?? "")) throw new BadRequestException("Only JPEG, PNG and WebP images are supported");
-    await sharp(file.buffer, { limitInputPixels: 25_000_000 }).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
-    return this.store.createScan(request.userId, key ?? randomUUID());
+
+    try {
+      metadata = await sharp(file.buffer, {
+        limitInputPixels: 25_000_000,
+      }).metadata();
+    } catch {
+      throw new BadRequestException(
+        "Image is malformed or unsupported",
+      );
+    }
+
+    if (
+      !metadata.width ||
+      !metadata.height ||
+      !["jpeg", "png", "webp", "heif"].includes(
+        metadata.format ?? "",
+      )
+    ) {
+      throw new BadRequestException(
+        "Only JPEG, PNG, WebP and HEIF images are supported",
+      );
+    }
+
+    const processedImage = await sharp(file.buffer, {
+      limitInputPixels: 25_000_000,
+    })
+      .rotate()
+      .resize({
+        width: 1600,
+        height: 1600,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const identification =
+      process.env.AI_MODE === "openai"
+        ? await this.vision.identify(processedImage)
+        : undefined;
+
+    return this.store.createScan(
+      request.userId,
+      requestKey,
+      identification,
+    );
   }
-  @Get(":id") get(@Param("id") id: string) { return this.store.getScan(id); }
-  @Post(":id/decision") decide(@Param("id") id: string, @Body() dto: DecisionDto) {
-    const scan = this.store.decideScan(id, dto.decision === "ACCEPT" ? "ACCEPTED" : "REJECTED");
-    if (dto.decision === "REJECT") return { scanId: id, status: scan.status, message: "Your feedback has been received" };
-    const record = this.store.addRecord(this.rules.classify(scan.id, scan.identification));
-    return { scanId: id, status: scan.status, wasteRecordId: record.id };
+
+  @Get(":id")
+  get(@Param("id") id: string) {
+    return this.store.getScan(id);
+  }
+
+  @Post(":id/decision")
+  decide(
+    @Param("id") id: string,
+    @Body() dto: DecisionDto,
+  ) {
+    const scan = this.store.decideScan(
+      id,
+      dto.decision === "ACCEPT"
+        ? "ACCEPTED"
+        : "REJECTED",
+    );
+
+    if (dto.decision === "REJECT") {
+      return {
+        scanId: id,
+        status: scan.status,
+        message: "Your feedback has been received",
+      };
+    }
+
+    const record = this.store.addRecord(
+      this.rules.classify(
+        scan.id,
+        scan.identification,
+      ),
+    );
+
+    return {
+      scanId: id,
+      status: scan.status,
+      wasteRecordId: record.id,
+    };
   }
 }
-
 @ApiTags("records")
 @Controller()
 @UseGuards(AuthGuard)

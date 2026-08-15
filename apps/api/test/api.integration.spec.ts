@@ -33,4 +33,16 @@ describe("Re-Sort API", () => {
     const decision = await request(app.getHttpServer()).post(`/api/v1/scans/${scan.body.id}/decision`).set("Authorization", `Bearer ${token}`).send({ decision: "ACCEPT" }).expect(201);
     expect(decision.body.wasteRecordId).toBeTruthy();
   });
+
+  it("returns an existing scan for the same idempotency key without consuming quota twice", async () => {
+    const image = await sharp({ create: { width: 80, height: 80, channels: 3, background: "#dde5d8" } }).png().toBuffer();
+    const key = "92aba2c5-f0fc-48f7-958d-5b272db325cc";
+    const before = await request(app.getHttpServer()).get("/api/v1/subscriptions/current").set("Authorization", `Bearer ${token}`).expect(200);
+    const first = await request(app.getHttpServer()).post("/api/v1/scans").set("Authorization", `Bearer ${token}`).set("Idempotency-Key", key).attach("image", image, { filename: "item.png", contentType: "image/png" }).expect(201);
+    const second = await request(app.getHttpServer()).post("/api/v1/scans").set("Authorization", `Bearer ${token}`).set("Idempotency-Key", key).attach("image", image, { filename: "item.png", contentType: "image/png" }).expect(201);
+    const after = await request(app.getHttpServer()).get("/api/v1/subscriptions/current").set("Authorization", `Bearer ${token}`).expect(200);
+
+    expect(second.body.id).toBe(first.body.id);
+    expect(after.body.used).toBe(before.body.used + 1);
+  });
 });

@@ -10,8 +10,33 @@ export type WasteCategory =
   | "RESIDUAL"
   | "BATTERY"
   | "E_WASTE"
+<<<<<<< ours
   | "LOCAL_GUIDANCE_REQUIRED";
 
+=======
+  | "TEXTILE"
+  | "HAZARDOUS_WASTE"
+  | "MEDICAL_SHARPS"
+  | "MEDICINE"
+  | "BULKY_WASTE"
+  | "CONSTRUCTION_WASTE"
+  | "DEPOSIT_RETURN"
+  | "REUSE_DONATE"
+  | "LOCAL_GUIDANCE_REQUIRED";
+
+export interface DisposalRecommendation {
+  wasteTypeLabel: string;
+  category: WasteCategory;
+  disposalRoute: string;
+  binLabel: string;
+  confidence: number;
+  reason: string;
+  disposalInstructions: string[];
+  reuseSuggestion: string;
+  requiresLocalGuidance: boolean;
+}
+
+>>>>>>> theirs
 export interface IdentificationResult {
   primaryObject: string;
   isPackaging: boolean;
@@ -23,6 +48,10 @@ export interface IdentificationResult {
   overallConfidence: number;
   uncertainties: string[];
   retakeAdvice: string | null;
+<<<<<<< ours
+=======
+  disposalRecommendation: DisposalRecommendation;
+>>>>>>> theirs
 }
 
 export interface ScanDto {
@@ -34,10 +63,26 @@ export interface ScanDto {
   identification: IdentificationResult;
 }
 
+<<<<<<< ours
+=======
+export interface CountryDto {
+  code: string;
+  name: string;
+  enabled: boolean;
+  label?: string;
+  ruleSetVersion?: string;
+  sourceUrls?: string[];
+}
+
+>>>>>>> theirs
 export interface WasteRecordDto {
   id: string;
   scanId: string;
   identifiedName: string;
+<<<<<<< ours
+=======
+  wasteTypeLabel: string;
+>>>>>>> theirs
   category: WasteCategory;
   primaryMaterial: string;
   materialLabel: string;
